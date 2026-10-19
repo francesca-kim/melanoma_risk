@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Melanoma risk calculator for germline variant carriers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<script src="risk_data.js"></script>
+<style>
+:root {
+  --bg: #F1F4F3; --surface: #FFFFFF; --ink: #17212B; --muted: #56616C;
+  --line: #D3DADE; --empty: #D6DCE0; --seer: #3E4954; --gene: #c0392b;
+  color-scheme: light;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161B; --surface: #192027; --ink: #E5EAEE; --muted: #9AA6B0;
+    --line: #2C363F; --empty: #2F3943; --seer: #B9C3CC; color-scheme: dark;
+  }
+}
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "Atkinson Hyperlegible", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 17px; line-height: 1.5;
+}
+.wrap { max-width: 1040px; margin: 0 auto; padding: 32px 20px 48px; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 1.15; margin: 0 0 8px; letter-spacing: -0.01em; }
+.lede { color: var(--muted); max-width: 62ch; margin: 0 0 28px; }
+
+.controls {
+  display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 20px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
+}
+label { display: block; font-weight: 700; margin-bottom: 6px; }
+.age-row { display: flex; gap: 12px; align-items: center; }
+input[type=number], select {
+  font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px;
+}
+input[type=number] { width: 5.2em; }
+select { width: 100%; }
+input[type=range] { flex: 1; accent-color: var(--gene); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button {
+  flex: 1; font: inherit; font-size: 0.95rem; padding: 8px 6px; border: 0; cursor: pointer;
+  background: var(--bg); color: var(--ink);
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); font-weight: 700; }
+:focus-visible { outline: 3px solid var(--gene); outline-offset: 2px; }
+
+.headline { font-size: clamp(1.25rem, 2.6vw, 1.6rem); line-height: 1.3; margin: 36px 0 22px; max-width: 46ch; }
+.headline strong { color: var(--gene); }
+.note { color: var(--muted); font-size: 0.95rem; }
+
+.arrays { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.panel h2 { font-size: 1.1rem; margin: 0 0 2px; }
+.panel .big { font-size: 2.6rem; font-weight: 700; line-height: 1.1; }
+.panel .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 12px; min-height: 1.5em; }
+.grid100 { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px 4px; max-width: 340px; }
+.grid100 svg { width: 100%; height: auto; display: block; }
+.fig { color: var(--empty); }
+.fig.hit { color: var(--c); }
+.fig.maybe { color: var(--c); opacity: 0.35; }
+.key { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 18px; color: var(--muted); font-size: 0.92rem; }
+.key span { display: inline-flex; align-items: center; gap: 6px; }
+.key svg { width: 14px; height: 22px; }
+
+.chart-box { margin-top: 40px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 8px; }
+.chart-box h2 { font-size: 1.1rem; margin: 0 0 4px; }
+.chart-scroll { overflow-x: auto; }
+#chart { width: 100%; min-width: 520px; height: auto; display: block; }
+#chart text { fill: var(--muted); font-size: 12px; font-family: inherit; }
+
+table { border-collapse: collapse; width: 100%; margin-top: 28px; font-size: 0.97rem; }
+.table-scroll { overflow-x: auto; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-weight: 700; }
+td.num { font-variant-numeric: tabular-nums; }
+
+.loader { background: var(--surface); border: 1px dashed var(--line); border-radius: 14px; padding: 24px; margin-top: 24px; }
+footer { margin-top: 44px; color: var(--muted); font-size: 0.9rem; max-width: 70ch; }
+footer p { margin: 0 0 10px; }
+
+@media (max-width: 760px) {
+  .controls { grid-template-columns: 1fr; }
+  .arrays { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Melanoma risk for people with an inherited gene variant</h1>
+  <p class="lede">Enter an age and a gene variant to see how many out of 100 people like that would be expected to develop melanoma, compared with 100 people from the general US population.</p>
+
+  <div id="loader" class="loader" hidden>
+    <p><strong>Risk data not found.</strong> Put <code>risk_data.js</code> in the same folder as this page, or open the exported table here:</p>
+    <input type="file" id="csvFile" accept=".csv">
+    <p class="note" id="loadMsg"></p>
+  </div>
+
+  <main id="app" hidden>
+    <section class="controls" aria-label="Your details">
+      <div>
+        <label for="ageNum">Current age</label>
+        <div class="age-row">
+          <input type="number" id="ageNum" min="0" max="95" step="1" value="40">
+          <input type="range" id="ageRange" min="0" max="95" step="1" value="40" aria-label="Current age slider">
+        </div>
+      </div>
+      <div>
+        <label for="gene">Gene variant</label>
+        <select id="gene"></select>
+      </div>
+      <div>
+        <label id="viewLabel">Show risk</label>
+        <div class="seg" role="group" aria-labelledby="viewLabel">
+          <button type="button" data-view="tenyr" aria-pressed="true">Next 10 years</button>
+          <button type="button" data-view="cum" aria-pressed="false">By this age</button>
+        </div>
+      </div>
+    </section>
+
+    <p class="headline" id="headline" aria-live="polite"></p>
+
+    <section class="arrays">
+      <div class="panel">
+        <h2 id="carrierTitle"></h2>
+        <div class="big" id="carrierBig"></div>
+        <div class="sub" id="carrierSub"></div>
+        <div class="grid100" id="carrierGrid" role="img"></div>
+      </div>
+      <div class="panel">
+        <h2>General US population</h2>
+        <div class="big" id="seerBig" style="color: var(--seer)"></div>
+        <div class="sub" id="seerSub"></div>
+        <div class="grid100" id="seerGrid" role="img"></div>
+      </div>
+    </section>
+    <div class="key" id="key"></div>
+
+    <section class="chart-box">
+      <h2 id="chartTitle"></h2>
+      <p class="note" id="chartNote" style="margin:0 0 8px"></p>
+      <div class="chart-scroll"><svg id="chart" viewBox="0 0 640 320" role="img"></svg></div>
+    </section>
+
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>At age <span id="tAge"></span></th><th>Next 10 years</th><th>By this age</th></tr></thead>
+        <tbody id="tBody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer>
+    <p><strong>How these numbers were made.</strong> Gene-carrier risks come from a Bayesian hierarchical meta-analysis (a way of combining many studies while allowing them to disagree) of published melanoma studies, following Ruberu et al., <em>Biometrics</em> 2024. General-population risks come from SEER cancer registry data (US cancer statistics), 2000–2023. All risks account for the chance of dying from other causes first.</p>
+    <p>“Next 10 years” is the chance of getting melanoma in the next 10 years for someone who is alive and melanoma-free today. “By this age” is the chance of having had melanoma at some point by this age. The range in brackets is the 95% credible interval (the range where the true value most likely falls).</p>
+    <p><strong>This is a research tool, not medical advice.</strong> Results are preliminary and do not include skin type, moles, sun exposure or family history. Please talk with a dermatologist or genetic counselor about your own risk.</p>
+    <p id="meta"></p>
+  </footer>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="person" viewBox="0 0 24 40">
+    <circle cx="12" cy="6" r="4.6" fill="currentColor"/>
+    <g stroke="currentColor" stroke-width="3.2" stroke-linecap="round" fill="none">
+      <line x1="12" y1="12.5" x2="12" y2="25"/>
+      <line x1="12" y1="15.5" x2="4.5" y2="22"/>
+      <line x1="12" y1="15.5" x2="19.5" y2="22"/>
+      <line x1="12" y1="25" x2="6" y2="37"/>
+      <line x1="12" y1="25" x2="18" y2="37"/>
+    </g>
+  </symbol>
+</svg>
+
+<script>
+(function () {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const state = { groups: null, seer: null, genes: [], age: 40, gene: null, view: "tenyr" };
+
+  // ---------- data loading ----------
+  function parseCSV(text) {
+    const rows = []; let row = [], field = "", quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false; }
+        else field += c;
+      } else if (c === '"') quoted = true;
+      else if (c === ",") { row.push(field); field = ""; }
+      else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (c !== "\r") field += c;
+    }
+    if (field !== "" || row.length) { row.push(field); rows.push(row); }
+    return rows;
+  }
+
+  function buildGroups(text) {
+    const rows = parseCSV(text.trim());
+    const head = rows[0];
+    const need = ["group", "color", "age", "cum_mean", "cum_lower", "cum_upper", "tenyr_mean", "tenyr_lower", "tenyr_upper"];
+    const missing = need.filter((n) => head.indexOf(n) < 0);
+    if (missing.length) throw new Error("The file is missing these columns: " + missing.join(", "));
+    const col = Object.fromEntries(need.map((n) => [n, head.indexOf(n)]));
+    const groups = {};
+    for (const r of rows.slice(1)) {
+      if (r.length < head.length) continue;
+      const name = r[col.group];
+      if (!groups[name]) groups[name] = { name, color: r[col.color] || "#c0392b", cum: { mean: [], lower: [], upper: [] }, tenyr: { mean: [], lower: [], upper: [] } };
+      const age = Number(r[col.age]);
+      for (const p of ["cum", "tenyr"]) for (const k of ["mean", "lower", "upper"]) {
+        const v = r[col[p + "_" + k]];
+        groups[name][p][k][age] = (v === "" || v === undefined || isNaN(Number(v))) ? null : Number(v);
+      }
+    }
+    return groups;
+  }
+
+  function start(text) {
+    const groups = buildGroups(text);
+    const names = Object.keys(groups);
+    const seerName = names.find((n) => /SEER|general/i.test(n));
+    if (!seerName) throw new Error("No general-population (SEER) rows found in the file.");
+    state.groups = groups;
+    state.seer = groups[seerName];
+    state.genes = names.filter((n) => n !== seerName);
+    state.gene = state.genes[0];
+    $("gene").innerHTML = state.genes.map((g) => `<option>${g.replace(/</g, "&lt;")}</option>`).join("");
+    $("loader").hidden = true;
+    $("app").hidden = false;
+    if (window.RISK_META) $("meta").textContent = "Model output generated " + window.RISK_META.generated + ".";
+    render();
+  }
+
+  // ---------- helpers ----------
+  const pct = (p) => p == null ? "–" : (p * 100 < 1 ? (p * 100).toFixed(2) : (p * 100).toFixed(1)) + "%";
+  const range = (lo, hi) => (lo == null || hi == null) ? "" : `(${pct(lo)} to ${pct(hi)})`;
+  const count = (p) => Math.round(p * 100);
+  function inWords(p) {
+    const n = count(p);
+    if (n >= 1) return `about <strong>${n}</strong> in 100`;
+    if (p <= 0) return "almost none";
+    return `fewer than 1 in 100 (about <strong>1 in ${Math.round(1 / p).toLocaleString()}</strong>)`;
+  }
+  function inWordsSeer(p) {
+    const n = count(p);
+    if (n >= 1) return `about ${n} in 100`;
+    if (p <= 0) return "almost none";
+    return `about 1 in ${Math.round(1 / p).toLocaleString()}`;
+  }
+  const geneColor = () => {
+    const c = state.groups[state.gene].color;
+    return matchMedia("(prefers-color-scheme: dark)").matches ? `color-mix(in srgb, ${c} 70%, white)` : c;
+  };
+
+  function fillGrid(el, mean, upper, color, label) {
+    const solid = mean == null ? 0 : count(mean);
+    const maybe = upper == null ? solid : Math.max(solid, count(upper));
+    let html = "";
+    for (let i = 0; i < 100; i++) {
+      const cls = i < solid ? "fig hit" : (i < maybe ? "fig maybe" : "fig");
+      html += `<svg class="${cls}" viewBox="0 0 24 40" aria-hidden="true"><use href="#person"/></svg>`;
+    }
+    el.innerHTML = html;
+    el.style.setProperty("--c", color);
+    el.setAttribute("aria-label", `${label}: ${solid} out of 100 people shaded`);
+  }
+
+  // ---------- main render ----------
+  function render() {
+    const g = state.groups[state.gene], s = state.seer, a = state.age, v = state.view;
+    const color = geneColor();
+    document.documentElement.style.setProperty("--gene", color);
+    const cm = g[v].mean[a], cl = g[v].lower[a], cu = g[v].upper[a], sm = s[v].mean[a];
+    const windowText = v === "tenyr" ? "in the next 10 years" : `by age ${a}`;
+
+    if (cm == null || sm == null) {
+      $("headline").innerHTML = v === "tenyr"
+        ? "10-year risk is only available up to age 85. Choose a younger age or switch to “By this age.”"
+        : "No estimate is available for this age.";
+    } else {
+      $("headline").innerHTML = `Of 100 people aged ${a} with a ${g.name} variant, ${inWords(cm)} would develop melanoma ${windowText}. In the general US population, ${inWordsSeer(sm)} would.`;
+    }
+
+    $("carrierTitle").textContent = g.name + " carriers";
+    $("carrierBig").textContent = pct(cm);
+    $("carrierBig").style.color = color;
+    $("carrierSub").textContent = cl != null ? "95% credible interval " + range(cl, cu) : "";
+    $("seerBig").textContent = pct(sm);
+    $("seerSub").textContent = (cm != null && sm) ? `Carriers: ${(cm / sm).toFixed(1)}× the general population` : "";
+    fillGrid($("carrierGrid"), cm, cu, color, g.name + " carriers");
+    fillGrid($("seerGrid"), sm, null, "var(--seer)", "General population");
+
+    const fig = (c, op) => `<svg viewBox="0 0 24 40" style="color:${c};opacity:${op}"><use href="#person"/></svg>`;
+    $("key").innerHTML =
+      `<span>${fig(color, 1)} Expected to develop melanoma ${windowText}</span>` +
+      `<span>${fig(color, 0.35)} Possible, within the upper end of the range</span>` +
+      `<span>${fig("var(--empty)", 1)} Not expected to</span>` +
+      `<span>Each figure is 1 person, rounded to the nearest whole person.</span>`;
+
+    $("tAge").textContent = a;
+    const row = (name, grp, ci) => `<tr><td>${name}</td>` +
+      ["tenyr", "cum"].map((k) => `<td class="num">${pct(grp[k].mean[a])} ${ci ? range(grp[k].lower[a], grp[k].upper[a]) : ""}</td>`).join("") + "</tr>";
+    $("tBody").innerHTML = row(g.name + " carriers", g, true) + row("General US population", s, false);
+
+    drawChart(g, s, a, v, color);
+  }
+
+  // ---------- chart ----------
+  function drawChart(g, s, age, v, color) {
+    const W = 640, H = 320, L = 54, R = 16, T = 14, B = 40;
+    const maxAge = v === "tenyr" ? 85 : 95;
+    const ages = [...Array(maxAge + 1).keys()];
+    let top = 0;
+    for (const x of ages) top = Math.max(top, g[v].upper[x] ?? g[v].mean[x] ?? 0, s[v].mean[x] ?? 0);
+    top = niceTop(top * 1.05);
+    const X = (x) => L + (x / maxAge) * (W - L - R);
+    const Y = (y) => H - B - (y / top) * (H - T - B);
+    const path = (arr) => ages.filter((x) => arr[x] != null).map((x, i) => (i ? "L" : "M") + X(x).toFixed(1) + "," + Y(arr[x]).toFixed(1)).join("");
+    const okBand = ages.filter((x) => g[v].lower[x] != null && g[v].upper[x] != null);
+    const band = okBand.length ? "M" + okBand.map((x) => X(x).toFixed(1) + "," + Y(g[v].upper[x]).toFixed(1)).join("L") +
+      "L" + okBand.slice().reverse().map((x) => X(x).toFixed(1) + "," + Y(g[v].lower[x]).toFixed(1)).join("L") + "Z" : "";
+
+    let svg = "";
+    const ticks = 5;
+    for (let i = 0; i <= ticks; i++) {
+      const y = (top / ticks) * i;
+      svg += `<line x1="${L}" x2="${W - R}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--line)"/>`;
+      svg += `<text x="${L - 8}" y="${Y(y) + 4}" text-anchor="end">${(y * 100).toFixed(top < 0.05 ? 1 : 0)}%</text>`;
+    }
+    for (let x = 0; x <= maxAge; x += 10) svg += `<text x="${X(x)}" y="${H - B + 18}" text-anchor="middle">${x}</text>`;
+    svg += `<text x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle">Age (years)</text>`;
+    svg += `<path d="${band}" fill="${color}" opacity="0.16"/>`;
+    svg += `<path d="${path(s[v].mean)}" fill="none" stroke="var(--seer)" stroke-width="2" stroke-dasharray="6 4"/>`;
+    svg += `<path d="${path(g[v].mean)}" fill="none" stroke="${color}" stroke-width="3"/>`;
+    if (age <= maxAge) {
+      svg += `<line x1="${X(age)}" x2="${X(age)}" y1="${T}" y2="${H - B}" stroke="var(--ink)" stroke-width="1" opacity="0.5"/>`;
+      if (g[v].mean[age] != null) svg += `<circle cx="${X(age)}" cy="${Y(g[v].mean[age])}" r="5" fill="${color}" stroke="var(--surface)" stroke-width="2"/>`;
+      if (s[v].mean[age] != null) svg += `<circle cx="${X(age)}" cy="${Y(s[v].mean[age])}" r="4.5" fill="var(--seer)" stroke="var(--surface)" stroke-width="2"/>`;
+    }
+    // legend
+    svg += `<line x1="${L + 10}" x2="${L + 34}" y1="${T + 10}" y2="${T + 10}" stroke="${color}" stroke-width="3"/><text x="${L + 40}" y="${T + 14}">${g.name} carriers (shaded: 95% range)</text>`;
+    svg += `<line x1="${L + 10}" x2="${L + 34}" y1="${T + 30}" y2="${T + 30}" stroke="var(--seer)" stroke-width="2" stroke-dasharray="6 4"/><text x="${L + 40}" y="${T + 34}">General US population</text>`;
+    $("chart").innerHTML = svg;
+    $("chart").setAttribute("aria-label", `Chart of ${v === "tenyr" ? "10-year" : "cumulative"} melanoma risk by age for ${g.name} carriers and the general population`);
+    $("chartTitle").textContent = v === "tenyr" ? "10-year risk at every starting age" : "Chance of having had melanoma by each age";
+    $("chartNote").textContent = "The vertical line marks the age you entered.";
+  }
+  function niceTop(x) {
+    if (x <= 0) return 0.01;
+    const p = Math.pow(10, Math.floor(Math.log10(x)));
+    for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= x) return m * p;
+    return 10 * p;
+  }
+
+  // ---------- events ----------
+  function setAge(val) {
+    const a = Math.max(0, Math.min(95, Math.round(Number(val) || 0)));
+    state.age = a; $("ageNum").value = a; $("ageRange").value = a; render();
+  }
+  $("ageNum").addEventListener("change", (e) => setAge(e.target.value));
+  $("ageRange").addEventListener("input", (e) => setAge(e.target.value));
+  $("gene").addEventListener("change", (e) => { state.gene = e.target.value; render(); });
+  document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+    state.view = b.dataset.view;
+    document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render();
+  }));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.groups && render());
+  $("csvFile").addEventListener("change", (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    f.text().then((t) => { try { start(t); } catch (err) { $("loadMsg").textContent = err.message; } });
+  });
+
+  try {
+    if (window.RISK_CSV) start(window.RISK_CSV); else $("loader").hidden = false;
+  } catch (err) {
+    $("loader").hidden = false; $("loadMsg").textContent = err.message;
+  }
+})();
+</script>
+</body>
+</html>
